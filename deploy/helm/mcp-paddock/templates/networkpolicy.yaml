@@ -1,0 +1,58 @@
+{{- if .Values.networkPolicy.enabled -}}
+{{- $np := .Values.networkPolicy -}}
+# The gateway is the only path from an agent to a tool. These policies make
+# that true at the network layer, not just by convention:
+#   agents      → gateway     (only pods labelled as agents)
+#   gateway     → tool servers, DNS, telemetry
+#   tool server ← gateway only; → DNS and telemetry only (no internet)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "paddock.fullname" . }}-gateway
+  labels:
+    {{- include "paddock.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: gateway
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            {{- toYaml $np.agentNamespaceSelector | nindent 12 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.agentPodSelector | nindent 14 }}
+      ports:
+        - port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              paddock.dev/tool-server: "true"
+      ports:
+        - port: {{ .Values.opstools.service.port }}
+    {{- include "paddock.baseEgress" . | nindent 4 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "paddock.fullname" . }}-tool-servers
+  labels:
+    {{- include "paddock.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      paddock.dev/tool-server: "true"
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/name: gateway
+  egress:
+    {{- include "paddock.baseEgress" . | nindent 4 }}
+{{- end }}
+

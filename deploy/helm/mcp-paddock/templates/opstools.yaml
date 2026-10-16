@@ -1,0 +1,69 @@
+{{- if .Values.opstools.enabled -}}
+{{- $name := printf "%s-opstools" (include "paddock.fullname" .) -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "paddock.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "paddock.labels" . | nindent 4 }}
+    app.kubernetes.io/name: opstools
+    paddock.dev/tool-server: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: opstools
+  template:
+    metadata:
+      labels:
+        {{- include "paddock.labels" . | nindent 8 }}
+        app.kubernetes.io/name: opstools
+        paddock.dev/tool-server: "true"
+    spec:
+      serviceAccountName: {{ $name }}
+      {{- include "paddock.podSpec" . | nindent 6 }}
+      containers:
+        - name: opstools
+          image: {{ include "paddock.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/opstools"]
+          args: ["-listen=:8081"]
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: opstools
+            {{- include "paddock.otelEnv" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8081
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.opstools.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "paddock.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: opstools
+  ports:
+    - name: http
+      port: {{ .Values.opstools.service.port }}
+      targetPort: http
+{{- end }}

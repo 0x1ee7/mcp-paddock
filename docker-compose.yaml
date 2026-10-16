@@ -1,0 +1,69 @@
+# Local stack: gateway + demo tool server + Grafana (Tempo, Loki, Prometheus).
+#
+#   docker compose up -d --build          start everything
+#   docker compose run --rm demo          run the scripted agent
+#   open http://localhost:3000            dashboard (admin / admin)
+#
+# The networks are the point: agents can reach the gateway, only the gateway
+# can reach the tool server, and the tool server has no route to the
+# internet. That is the Compose version of the Kubernetes NetworkPolicy in
+# deploy/helm.
+
+name: mcp-paddock
+
+x-hardened: &hardened
+  build: .
+  image: mcp-paddock:dev
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
+services:
+  lgtm:
+    image: grafana/otel-lgtm:latest
+    ports: ["3000:3000"]
+    environment:
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /otel-lgtm/grafana/conf/provisioning/dashboards/custom/mcp-paddock.json
+    volumes:
+      - ./deploy/grafana/mcp-paddock.json:/otel-lgtm/grafana/conf/provisioning/dashboards/custom/mcp-paddock.json:ro
+      - ./deploy/grafana/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/custom.yaml:ro
+    networks: [observability, observability-tools]
+
+  opstools:
+    <<: *hardened
+    entrypoint: ["/opstools"]
+    command: ["-listen", ":8081"]
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318
+    networks: [tools, observability-tools]
+
+  gateway:
+    <<: *hardened
+    entrypoint: ["/gateway"]
+    command: ["-config", "/config/policy.yaml", "-listen", ":8080"]
+    environment:
+      OPSTOOLS_URL: http://opstools:8081/mcp
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318
+    volumes:
+      - ./config:/config:ro # edit config/policy.yaml and the gateway reloads it
+    ports: ["8080:8080"]
+    depends_on: [opstools, lgtm]
+    networks: [agents, tools, observability]
+
+  demo:
+    <<: *hardened
+    restart: "no"
+    entrypoint: ["/demo"]
+    command: ["-gateway", "http://gateway:8080"]
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318
+    depends_on: [gateway]
+    profiles: [demo]
+    networks: [agents, observability]
+
+networks:
+  agents: {}               # agents ↔ gateway
+  tools: { internal: true } # gateway ↔ tool servers, no internet egress
+  observability: {}        # gateway and agents → telemetry
+  observability-tools: { internal: true } # tool servers → telemetry, nothing else

@@ -1,0 +1,53 @@
+# Gateway policy. Deny by default: an agent can call a tool only if one of
+# its allow patterns matches "<upstream>/<tool>" and no deny pattern does.
+# The gateway re-reads this file every few seconds; a broken edit is rejected
+# and the previous policy stays active.
+#
+# Tokens are stored as SHA-256 hashes. Make one with:
+#   go run ./cmd/gateway hash-token <token>
+
+upstreams:
+  ops: ${OPSTOOLS_URL:-http://localhost:8081/mcp}
+
+default_rate_limit:
+  per_minute: 60
+  burst: 20
+
+agents:
+  # The on-call copilot: can investigate and restart, never delete.
+  - name: oncall-bot
+    token_sha256: 207adcf67f95065adb33a50b488cf7d7bcff7c63704543046cb84ac98242558d # demo-oncall-token
+    allow:
+      - ops/list_services
+      - ops/get_service_health
+      - ops/tail_logs
+      - ops/restart_service
+    deny:
+      - ops/delete_*
+    rate_limit:
+      per_minute: 30
+      burst: 10
+    tool_rate_limits:
+      ops/restart_service: { per_minute: 2, burst: 1 }
+
+  # A read-only status bot: sees only list_* and get_* tools.
+  - name: dashboard-bot
+    token_sha256: 608542d94c38b81fa4bfd8765813de3536f1ad7bdbe2bb39f2e7e27f726fa5bd # demo-readonly-token
+    allow:
+      - ops/list_*
+      - ops/get_*
+
+  # A real Hermes Agent session (see hermes/config.yaml). Same rights as
+  # oncall-bot. Set disabled: true to cut it off without a restart.
+  - name: hermes
+    token_sha256: 353c9cec010d6a23a7f9e90086842e4ce73b461db4d826b92f84a6c6e728fcee # demo-hermes-token
+    disabled: false
+    allow:
+      - ops/list_services
+      - ops/get_service_health
+      - ops/tail_logs
+      - ops/restart_service
+    deny:
+      - ops/delete_*
+    tool_rate_limits:
+      ops/restart_service: { per_minute: 2, burst: 1 }

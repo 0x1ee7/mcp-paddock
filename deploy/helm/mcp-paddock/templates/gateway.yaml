@@ -1,0 +1,91 @@
+{{- $name := printf "%s-gateway" (include "paddock.fullname" .) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-policy
+  labels:
+    {{- include "paddock.labels" . | nindent 4 }}
+data:
+  policy.yaml: |
+    {{- .Values.policy | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "paddock.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "paddock.labels" . | nindent 4 }}
+    app.kubernetes.io/name: gateway
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: gateway
+  template:
+    metadata:
+      labels:
+        {{- include "paddock.labels" . | nindent 8 }}
+        app.kubernetes.io/name: gateway
+    spec:
+      serviceAccountName: {{ $name }}
+      {{- include "paddock.podSpec" . | nindent 6 }}
+      containers:
+        - name: gateway
+          image: {{ include "paddock.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/gateway"]
+          args:
+            - -config=/config/policy.yaml
+            - -listen=:8080
+            - -call-timeout={{ .Values.gateway.callTimeout }}
+          env:
+            - name: OPSTOOLS_URL
+              value: {{ printf "http://%s-opstools:%v/mcp" (include "paddock.fullname" .) .Values.opstools.service.port | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: mcp-gateway
+            {{- include "paddock.otelEnv" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: policy
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: policy
+          configMap:
+            name: {{ $name }}-policy
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "paddock.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: gateway
+  ports:
+    - name: http
+      port: {{ .Values.gateway.service.port }}
+      targetPort: http

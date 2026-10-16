@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: mcp-paddock
+    type: file
+    options:
+      path: /otel-lgtm/grafana/conf/provisioning/dashboards/custom
+      foldersFromFilesStructure: false

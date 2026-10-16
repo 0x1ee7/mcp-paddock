@@ -1,0 +1,77 @@
+image:
+  repository: ghcr.io/0x1ee7/mcp-paddock
+  tag: "" # defaults to the chart appVersion
+  pullPolicy: IfNotPresent
+
+gateway:
+  # Rate limits are kept in process memory. Stay at one replica until the
+  # limiter is backed by a shared store, or agents get replicas × their quota.
+  replicas: 1
+  callTimeout: 60s
+  service:
+    port: 8080
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 128Mi }
+
+# The gateway policy, mounted as a ConfigMap. The gateway re-reads it every
+# 5 seconds, so `helm upgrade` with a new policy takes effect without a pod
+# restart, and an invalid policy is rejected while the old one stays active.
+# Tokens are SHA-256 hashes: `docker run --rm IMAGE hash-token <token>`.
+policy: |
+  upstreams:
+    ops: ${OPSTOOLS_URL}
+  default_rate_limit: { per_minute: 60, burst: 20 }
+  agents:
+    - name: oncall-bot
+      token_sha256: 207adcf67f95065adb33a50b488cf7d7bcff7c63704543046cb84ac98242558d
+      allow: [ops/list_services, ops/get_service_health, ops/tail_logs, ops/restart_service]
+      deny: [ops/delete_*]
+      rate_limit: { per_minute: 30, burst: 10 }
+      tool_rate_limits:
+        ops/restart_service: { per_minute: 2, burst: 1 }
+    - name: dashboard-bot
+      token_sha256: 608542d94c38b81fa4bfd8765813de3536f1ad7bdbe2bb39f2e7e27f726fa5bd
+      allow: [ops/list_*, ops/get_*]
+
+# The demo tool server. Real tool servers would be their own releases.
+opstools:
+  enabled: true
+  service:
+    port: 8081
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { memory: 64Mi }
+
+otel:
+  # OTLP/HTTP endpoint, for example Grafana Alloy: http://alloy.monitoring:4318
+  endpoint: ""
+
+# Run tool servers (and the gateway) under a sandboxed runtime. On GKE with a
+# GKE Sandbox node pool this is "gvisor"; elsewhere "kata" or "runsc".
+runtimeClassName: ""
+
+networkPolicy:
+  enabled: true
+  # Only pods with these labels may call the gateway.
+  agentPodSelector:
+    paddock.dev/agent: "true"
+  # Namespaces those agent pods may live in. {} means any namespace.
+  agentNamespaceSelector: {}
+  # Where telemetry goes. Matches the namespace of your collector.
+  otelNamespaceSelector:
+    kubernetes.io/metadata.name: monitoring
+  otelPort: 4318
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]

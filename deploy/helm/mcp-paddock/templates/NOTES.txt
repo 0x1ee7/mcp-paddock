@@ -1,0 +1,11 @@
+MCP gateway: http://{{ include "paddock.fullname" . }}-gateway.{{ .Release.Namespace }}:{{ .Values.gateway.service.port }}/mcp/<upstream>
+
+Agents must run in pods labelled {{ toYaml .Values.networkPolicy.agentPodSelector | trim }}
+and send "Authorization: Bearer <token>".
+
+Try it from your machine:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "paddock.fullname" . }}-gateway 8080:{{ .Values.gateway.service.port }}
+(port-forward bypasses NetworkPolicy, so it works for local testing only.)
+
+Recommended: label the namespace pod-security.kubernetes.io/enforce=restricted.
+Every pod in this chart already satisfies the restricted profile.

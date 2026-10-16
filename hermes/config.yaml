@@ -1,0 +1,13 @@
+# Merge this into ~/.hermes/config.yaml to point Hermes Agent at the gateway.
+# Put the token in ~/.hermes/.env as:  PADDOCK_TOKEN=demo-hermes-token
+#
+# There is deliberately no tools.include / tools.exclude here. Filtering on
+# the client is a convenience; the gateway enforces the same policy on the
+# server side, where a compromised or prompt-injected agent cannot change it.
+mcp_servers:
+  paddock:
+    url: "http://localhost:8080/mcp/ops"
+    headers:
+      Authorization: "Bearer ${PADDOCK_TOKEN}"
+    connect_timeout: 30
+    timeout: 120

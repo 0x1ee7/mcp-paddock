@@ -1,0 +1,8 @@
+apiVersion: v2
+name: mcp-paddock
+description: MCP gateway that authenticates agents, enforces per-agent tool policy and rate limits, and traces every tool call.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords: [mcp, ai-agents, gateway, opentelemetry]
+sources: [https://github.com/0x1ee7/mcp-paddock]
